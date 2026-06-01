@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Finder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-2xl mx-auto px-4 py-12">
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Mida ma tellisin?</h1>
+            <p class="text-gray-600">Lae üles oma panga CSV ja leia kõik tellimused</p>
+        </div>
+
+        <!-- Upload Zone -->
+        <form method="post" enctype="multipart/form-data" action="/upload"
+              class="drop-zone border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center cursor-pointer hover:border-blue-400 transition-colors bg-white"
+              id="dropZone">
+            <input type="file" name="file" accept=".csv" class="hidden" id="fileInput" required>
+            <div class="text-5xl mb-4">📄</div>
+            <p class="text-lg font-medium text-gray-700 mb-1">Lohista CSV siia või klõpsa</p>
+            <p class="text-sm text-gray-400">Toetatud: Swedbank, LHV, SEB, Coop Pank, Luminor</p>
+            <button type="submit"
+                    class="mt-6 bg-blue-600 text-white px-8 py-3 rounded-full font-medium hover:bg-blue-700 transition-colors">
+                Skaneeri
+            </button>
+        </form>
+
+        <!-- Info -->
+        <div class="mt-8 text-center text-sm text-gray-400">
+            Andmed ei salvestu serverisse püsivalt.
+            <br>CSV formaat: kuupäev · saaja · summa · selgitus
+        </div>
+    </div>
+
+    <script>
+        const zone = document.getElementById('dropZone');
+        const input = document.getElementById('fileInput');
+
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            input.files = e.dataTransfer.files;
+        });
+    </script>
+</body>
+</html>
