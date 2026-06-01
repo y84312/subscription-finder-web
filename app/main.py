@@ -1,12 +1,12 @@
 """Subscription Finder Web — CSV upload → subscription detection."""
-import os, sys, uuid
+import html, os, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from src.detector import SubscriptionDetector
 from src.csv_parser import parse_csv
@@ -16,8 +16,27 @@ app = FastAPI(title="Subscription Finder")
 BASE_DIR = Path(__file__).parent.parent
 templates_dir = BASE_DIR / "app" / "templates"
 
-UPLOAD_DIR = BASE_DIR / "data" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Security: load session secret from env or use fixed fallback
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ.get("SESSION_SECRET", "subscription-finder-secret-2026-06"),
+)
+
+MAX_CSV_BYTES = 2 * 1024 * 1024  # 2 MB upload limit
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com 'unsafe-inline'; "
+        "style-src 'self' https://cdn.tailwindcss.com 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self'; frame-ancestors 'none'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 HTML_HEADER = """<!DOCTYPE html><html lang="et"><head>
@@ -42,9 +61,13 @@ def _fmt_eur(v):
     return f"{v:.2f}"
 
 
+def _esc(s):
+    """HTML-escape user-controlled strings before rendering."""
+    return html.escape(str(s), quote=True)
+
+
 def _gap_trend(dates):
     """Calculate average gap and trend from dates."""
-    from datetime import date as dt_date
     if len(dates) < 2:
         return None, None
     gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
@@ -87,7 +110,7 @@ def render_results(tx_count, subscriptions, file_name="", error=None):
         lines.append(f'''
         <div class="mt-6 bg-red-50 border border-red-200 rounded-xl p-6 text-center">
             <div class="text-4xl mb-3">⚠️</div>
-            <p class="text-red-700 font-medium">{error}</p>
+            <p class="text-red-700 font-medium">{_esc(error)}</p>
         </div>''')
 
     if subscriptions:
@@ -99,7 +122,7 @@ def render_results(tx_count, subscriptions, file_name="", error=None):
         # ── Summary cards ──
         lines.append(f'''
         <div class="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h2 class="text-xl font-bold text-gray-900 mb-1">📊 {file_name}</h2>
+            <h2 class="text-xl font-bold text-gray-900 mb-1">📊 {_esc(file_name)}</h2>
             <p class="text-gray-500 text-sm">{tx_count} tehingut analüüsitud · {len(subscriptions)} tellimust leitud</p>
             <div class="mt-6 grid grid-cols-3 gap-3">
                 <div class="bg-blue-50 rounded-xl p-4 text-center">
@@ -153,7 +176,7 @@ def render_results(tx_count, subscriptions, file_name="", error=None):
                 lines.append(f'''
                     <tr class="border-b border-gray-100 hover:bg-gray-50">
                         <td class="py-3 pr-4">
-                            <div class="font-medium text-gray-900">{sub.merchant_name}</div>
+                            <div class="font-medium text-gray-900">{_esc(sub.merchant_name)}</div>
                             <div class="text-xs text-gray-400">{sub.occurrences} tehingut · alates {sub.first_seen.day}.{sub.first_seen.month}</div>
                         </td>
                         <td class="py-3 pr-4 text-gray-700 whitespace-nowrap">{amount_text} €</td>
@@ -188,7 +211,7 @@ def render_results(tx_count, subscriptions, file_name="", error=None):
                     <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
                         <div class="flex items-center gap-2">
                             <span class="w-3 h-3 rounded-full {ce}"></span>
-                            <span class="font-semibold text-gray-900">{sub.merchant_name}</span>
+                            <span class="font-semibold text-gray-900">{_esc(sub.merchant_name)}</span>
                         </div>
                         <div class="text-sm text-gray-500">{sub.occurrences} tehingut</div>
                     </div>
@@ -246,7 +269,7 @@ def render_results(tx_count, subscriptions, file_name="", error=None):
         if inactive:
             lines.append('<h3 class="mt-8 mb-4 text-lg font-semibold text-gray-500">Viimati mitte-täidetud</h3>')
             for sub in inactive:
-                lines.append(f'<div class="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">{sub.merchant_name} — {_fmt_eur(sub.amount)} EUR · viimati {sub.last_seen.day}.{sub.last_seen.month}.{sub.last_seen.year}</div>')
+                lines.append(f'<div class="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">{_esc(sub.merchant_name)} — {_fmt_eur(sub.amount)} EUR · viimati {sub.last_seen.day}.{sub.last_seen.month}.{sub.last_seen.year}</div>')
 
     elif not error:
         lines.append('<div class="mt-6 text-center text-gray-500"><p>Ei leidnud tellimuste musterit.</p></div>')
@@ -266,6 +289,10 @@ async def upload(request: Request, file: UploadFile = File(...)):
         return render_results(0, [], error="Ainult CSV faile toetatud.")
 
     content = await file.read()
+
+    # Security: enforce upload size limit
+    if len(content) > MAX_CSV_BYTES:
+        return render_results(0, [], error="Fail on liiga suur. Max 2 MB.")
 
     transactions = parse_csv(content)
     if not transactions:

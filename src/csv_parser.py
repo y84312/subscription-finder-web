@@ -25,21 +25,23 @@ def _parse_date(v):
     for pat in [r"(\d{1,2})\.(\d{1,2})\.(\d{4})", r"(\d{4})-(\d{2})-(\d{2})", r"(\d{1,2})/(\d{1,2})/(\d{4})"]:
         m = re.match(pat, v)
         if m:
-            a,b,c = int(m.group(1)),int(m.group(2)),int(m.group(3))
-            frm = re.match(r"(\d{4})", v) is not None
-            try: return date(c,b,a) if frm else date(c, a, b) if frm else date(c,b,a) if a>31 else date(c,b,a)
-            except: pass
-            try:
-                if a>31: return date(a,b,c)
-                return date(c,b,a)
-            except: pass
+            a, b, c = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            # YYYY-MM-DD: first group is year
+            if pat.startswith(r"(\d{4})"):
+                try: return date(a, b, c)
+                except ValueError: continue
+            else:
+                # DD.MM.YYYY or DD/MM/YYYY
+                try: return date(c, b, a)
+                except ValueError: continue
     return None
 
 def _parse_amount(v):
-    v = v.strip().replace(" ",",").replace(",",".").replace("-.€","")
-    if v.endswith("-"): v = "-"+v[:-1]
+    v = v.strip().replace(" ", "").replace(",", ".")
+    if v.endswith("-"):
+        v = "-" + v[:-1]
     try: return float(v)
-    except: return None
+    except (ValueError, TypeError): return None
 
 def parse_csv(content: bytes) -> list:
     text = content.decode("utf-8-sig")
