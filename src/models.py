@@ -29,6 +29,8 @@ class DetectedSubscription:
     total_spent: float
     confidence: float  # 0-1
     estimated_yearly_cost: float
+    dates: list = field(default_factory=list)
+    amounts: list = field(default_factory=list)
 
     @property
     def is_active(self) -> bool:

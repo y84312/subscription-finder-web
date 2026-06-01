@@ -204,6 +204,8 @@ class SubscriptionDetector:
             total_spent=round(total_spent, 2),
             confidence=round(confidence, 3),
             estimated_yearly_cost=round(estimated_yearly, 2),
+            dates=dates,
+            amounts=[round(a, 2) for a in amounts],
         )
 
     def _classify_frequency(self, avg_gap_days: float) -> str:
